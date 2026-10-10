@@ -1,0 +1,14 @@
+# 让 .bat 在任何平台克隆下来都是 CRLF —— 行尾是 LF 时 cmd.exe 可能解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 其余文本统一按 LF 存库；Windows 检出时按 core.autocrlf 处理
+*.mjs text
+*.js text
+*.json text
+*.md text
+*.html text
+
+# 二进制（避免被当文本处理）
+*.mp3 binary
+*.wav binary

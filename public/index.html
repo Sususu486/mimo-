@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MiMo 语音克隆</title>
+<style>
+  :root {
+    --bg: #0f1216; --card: #171b22; --card2: #1e232c; --line: #2a313c;
+    --tx: #e8ecf2; --tx2: #9aa5b4; --accent: #62d0ff; --accent2: #7c9cff;
+    --ok: #4ade80; --err: #ff6b6b; --warn: #ffc86b;
+    --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px 18px 60px; background:
+      radial-gradient(900px 500px at 8% -10%, #16324a 0%, transparent 60%),
+      radial-gradient(800px 460px at 100% 0%, #2a2350 0%, transparent 55%), var(--bg);
+    color: var(--tx); font: 14px/1.6 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; display: grid; gap: 16px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: .3px; }
+  header p { margin: 0; color: var(--tx2); font-size: 13px; }
+  .card { background: linear-gradient(180deg, var(--card), var(--card2)); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .card h2 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  label { display: block; font-size: 12px; color: var(--tx2); margin: 10px 0 5px; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width: 100%; background: #0c0f13; color: var(--tx); border: 1px solid var(--line);
+    border-radius: 9px; padding: 9px 11px; font: inherit; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px rgba(124,156,255,.12); }
+  textarea { min-height: 92px; resize: vertical; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .row > * { flex: 1 1 160px; }
+  .row.tight > * { flex: 0 0 auto; }
+  button {
+    background: #232a35; color: var(--tx); border: 1px solid var(--line); border-radius: 9px;
+    padding: 9px 14px; font: inherit; cursor: pointer; transition: .15s;
+  }
+  button:hover { border-color: #3c4655; background: #2a323f; }
+  button.primary { background: linear-gradient(180deg, #2b6cff, #1f52cc); border-color: #2b6cff; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.ghost { background: transparent; }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  .hint { font-size: 12px; color: var(--tx2); margin-top: 6px; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--line); }
+  .badge.ok { color: var(--ok); border-color: rgba(74,222,128,.35); background: rgba(74,222,128,.08); }
+  .badge.no { color: var(--err); border-color: rgba(255,107,107,.35); background: rgba(255,107,107,.08); }
+  #drop { border: 1.5px dashed #39424f; border-radius: 12px; padding: 18px; text-align: center; color: var(--tx2); transition: .15s; }
+  #drop.over { border-color: var(--accent); color: var(--tx); background: rgba(98,208,255,.06); }
+  .err { white-space: pre-wrap; color: #ffd9d9; background: rgba(255,107,107,.1); border: 1px solid rgba(255,107,107,.3); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  .ok { color: #d9ffe6; background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  audio { width: 100%; margin-top: 10px; }
+  ul.list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+  ul.list li { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; background: #12161c; font-size: 12.5px; }
+  ul.list li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+  ul.list li .meta { color: var(--tx2); font-size: 11.5px; }
+  .timer { font-family: var(--mono); color: var(--accent); }
+  details summary { cursor: pointer; color: var(--tx2); font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 620px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>MiMo 语音克隆</h1>
+    <p>给一段参考音频 + 一句文字，克隆出这个音色的语音。模型 <span class="mono">mimo-v2.5-tts-voiceclone</span></p>
+  </header>
+
+  <section class="card">
+    <h2><span class="dot"></span>设置</h2>
+    <div class="row">
+      <div style="flex:2 1 320px">
+        <label>MiMo API Key <span id="keyState" class="badge" style="margin-left:6px"></span></label>
+        <div class="row tight" style="gap:8px">
+          <input type="password" id="apiKey" placeholder="sk-… 或 tp-…（只存在本目录 config.json）" style="flex:1 1 auto" />
+          <button class="ghost" id="toggleKey" style="flex:0 0 auto">显示</button>
+          <button class="ghost" id="clearKey" style="flex:0 0 auto">清除</button>
+        </div>
+      </div>
+      <div style="flex:1 1 200px">
+        <label>接口地址</label>
+        <input type="text" id="baseUrl" />
+      </div>
+    </div>
+    <div class="row">
+      <div><label>输出格式</label>
+        <select id="format"><option value="mp3">mp3（体积小）</option><option value="wav">wav</option></select>
+      </div>
+      <div><label>超时（秒）</label>
+        <input type="number" id="timeout" min="30" max="600" step="10" />
+      </div>
+      <div style="flex:0 0 auto; align-self:flex-end"><button id="saveCfg">保存设置</button></div>
+    </div>
+    <div class="hint">克隆是冷启动最慢的一步：实测冷调用 44~112 秒、热了约 2 秒。默认 180 秒，等得久不代表卡死。</div>
+  </section>
+
+  <section class="card">
+    <h2><span class="dot"></span>参考音频 <span id="refState" class="badge" style="margin-left:6px"></span></h2>
+    <div id="drop">
+      把 mp3 / wav 拖到这里，或
+      <button class="ghost" id="pick" style="padding:4px 10px">选择文件</button>
+      <input type="file" id="file" accept=".mp3,.wav,audio/mpeg,audio/wav" style="display:none" />
+      <div class="hint">建议 5~15 秒、单一说话人、无背景音乐；≤8MB。文件会复制到 refs\ 目录。</div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div style="flex:2 1 340px">
+        <label>当前使用的路径</label>
+        <input type="text" id="refPath" placeholder="D:\...\ref.mp3（也支持粘贴，带引号也能识别）" />
+      </div>
+      <div style="flex:0 0 auto"><button id="usePath">使用这个路径</button></div>
+    </div>
+    <div id="refPlayer"></div>
+    <div id="refListWrap" style="display:none">
+      <label>refs 目录里已有的音频</label>
+      <ul class="list" id="refList"></ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="dot"></span>合成</h2>
+
+    <label>语气 / 风格指令（可选 · 自然语言，不会被念出来）</label>
+    <textarea id="style" style="min-height:64px" placeholder="例：用轻快上扬的语调，语速稍快，带着压不住的得意与小骄傲，声音明亮有活力。&#10;也可以写「导演模式」——角色 / 场景 / 指导三段，越长越细越像演戏。"></textarea>
+    <div class="row tight" style="margin-top:8px; gap:6px">
+      <button class="ghost" data-style="用温柔、语速偏慢的语气，像在哄人。">温柔哄人</button>
+      <button class="ghost" data-style="用极度慵懒、语速极慢、有气无力的语气说，像刚睡醒。">慵懒没劲</button>
+      <button class="ghost" data-style="用特别兴奋、语速偏快、句尾上扬带笑的语气说。">兴奋雀跃</button>
+      <button class="ghost" data-style="用委屈巴巴、带点鼻音和哽咽的语气，声音压得低低的。">委屈巴巴</button>
+      <button class="ghost" data-style="用清冷、克制的语气，语速平缓，几乎不带情绪起伏。">清冷克制</button>
+      <button class="ghost" id="director">导演模式模板</button>
+      <button class="ghost" id="clearStyle">清空</button>
+    </div>
+    <div class="hint">这是官方「自然语言控制」：内容放 <span class="mono">role:user</span>，只影响语气，不会被念出来。想更精细可以叠加下面的音频标签。</div>
+
+    <label style="margin-top:14px">要念的文字 <span class="meta" id="count" style="color:var(--tx2)">0 字</span></label>
+    <textarea id="text" placeholder="例如：我是小鲸鱼，今天也要好好说话。"></textarea>
+    <div class="row tight" style="margin-top:8px; gap:6px">
+      <span class="hint" style="margin:0 4px 0 0">开头风格标签：</span>
+      <button class="ghost tag-open" data-tag="开心">开心</button>
+      <button class="ghost tag-open" data-tag="慵懒">慵懒</button>
+      <button class="ghost tag-open" data-tag="俏皮">俏皮</button>
+      <button class="ghost tag-open" data-tag="温柔">温柔</button>
+      <button class="ghost tag-open" data-tag="严肃">严肃</button>
+      <button class="ghost tag-open" data-tag="东北话">东北话</button>
+      <button class="ghost tag-open" data-tag="粤语">粤语</button>
+    </div>
+    <div class="row tight" style="margin-top:6px; gap:6px">
+      <span class="hint" style="margin:0 4px 0 0">句中插入标签：</span>
+      <button class="ghost tag-inline" data-tag="轻笑">[轻笑]</button>
+      <button class="ghost tag-inline" data-tag="叹气">[叹气]</button>
+      <button class="ghost tag-inline" data-tag="深呼吸">[深呼吸]</button>
+      <button class="ghost tag-inline" data-tag="撒娇">[撒娇]</button>
+      <button class="ghost tag-inline" data-tag="颤抖">[颤抖]</button>
+      <button class="ghost tag-inline" data-tag="语速加快">[语速加快]</button>
+      <button class="ghost tag-inline" data-tag="沉默片刻">[沉默片刻]</button>
+    </div>
+    <div class="hint">官方「音频标签控制」：写进要念的文本里，开头 <span class="mono">(风格)</span> 定整体基调，句中 <span class="mono">[标签]</span> 管到每个字（喘息、哽咽、重音、停顿）。⚠️ 克隆模式**不支持唱歌**。</div>
+
+    <div class="row" style="margin-top:12px">
+      <div style="flex:0 0 auto"><button class="primary" id="go">开始合成</button></div>
+      <div style="flex:1 1 200px; align-self:center" id="status"></div>
+    </div>
+    <div id="result"></div>
+    <details style="margin-top:10px"><summary>看这次实际发出去的请求</summary>
+      <pre class="mono" id="payload" style="white-space:pre-wrap; background:#0c0f13; border:1px solid var(--line); border-radius:9px; padding:10px; max-height:240px; overflow:auto"></pre>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2><span class="dot"></span>已合成（output 目录）</h2>
+    <ul class="list" id="outList"></ul>
+    <div class="hint" id="outDirHint"></div>
+  </section>
+</div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const state = { refs: [], outputs: [] };
+let timerId = null;
+
+function fmtKB(n) { return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1024).toFixed(0) + ' KB'; }
+function fmtTime(ms) { return new Date(ms).toLocaleString('zh-CN', { hour12: false }); }
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? undefined : {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+function renderRefBadge() {
+  const r = state.ref;
+  const el = $('refState');
+  if (!r) { el.className = 'badge no'; el.textContent = '未选择'; return; }
+  if (r.error) { el.className = 'badge no'; el.textContent = '读不到'; return; }
+  el.className = 'badge ok'; el.textContent = r.name + ' · ' + fmtKB(r.bytes);
+}
+function renderRefPlayer() {
+  const r = state.ref;
+  $('refPlayer').innerHTML = (r && !r.error)
+    ? '<audio controls preload="none" src="/ref/' + encodeURIComponent(r.name) + '"></audio>'
+    : '';
+}
+function renderRefs() {
+  const list = state.refs || [];
+  $('refListWrap').style.display = list.length ? '' : 'none';
+  $('refList').innerHTML = list.map((f) =>
+    '<li><span class="name">' + esc(f.name) + '</span><span class="meta">' + fmtKB(f.bytes) + '</span>' +
+    '<button class="ghost" data-use="' + esc(f.file) + '">使用</button></li>').join('');
+  $('refList').querySelectorAll('[data-use]').forEach((b) => b.onclick = async () => {
+    await api('/api/ref/select', { file: b.dataset.use });
+    await refresh();
+  });
+}
+function renderOutputs() {
+  const list = state.outputs || [];
+  $('outList').innerHTML = list.length ? list.map((f) =>
+    '<li><span class="name">' + esc(f.file) + '</span><span class="meta">' + fmtKB(f.bytes) + ' · ' + fmtTime(f.mtime) + '</span>' +
+    '<audio controls preload="none" style="width:210px" src="/out/' + encodeURIComponent(f.file) + '"></audio>' +
+    '<a href="/out/' + encodeURIComponent(f.file) + '" download><button class="ghost">下载</button></a></li>').join('')
+    : '<li><span class="meta">还没有合成记录</span></li>';
+}
+
+async function refresh() {
+  const s = await api('/api/state');
+  state.ref = s.ref; state.refs = s.refs; state.outputs = s.outputs;
+  $('baseUrl').value = s.baseUrl;
+  $('format').value = s.format;
+  $('timeout').value = Math.round(s.timeoutMs / 1000);
+  $('refPath').value = s.refPath || '';
+  if (!$('style').dataset.touched) $('style').value = s.style || '';
+  $('style').addEventListener('input', () => { $('style').dataset.touched = '1'; }, { once: true });
+  if (!document.activeElement || document.activeElement.id !== 'apiKey') {
+    $('apiKey').value = '';
+    $('apiKey').placeholder = s.hasKey ? ('已保存：' + s.keyMasked + '（留空=不改）') : 'sk-… 或 tp-…';
+  }
+  const ks = $('keyState');
+  ks.className = 'badge ' + (s.hasKey ? 'ok' : 'no');
+  ks.textContent = s.hasKey ? '已配置' : '未配置';
+  renderRefBadge(); renderRefPlayer(); renderRefs(); renderOutputs();
+  $('outDirHint').textContent = '模型：' + s.model + ' · 文件保存在本程序的 output\\ 目录';
+}
+
+$('toggleKey').onclick = () => {
+  const el = $('apiKey');
+  el.type = el.type === 'password' ? 'text' : 'password';
+  $('toggleKey').textContent = el.type === 'password' ? '显示' : '隐藏';
+};
+$('clearKey').onclick = async () => {
+  if (!confirm('确定清除已保存的 API Key？')) return;
+  await api('/api/config', { apiKey: '' });
+  await refresh();
+};
+$('saveCfg').onclick = async () => {
+  const patch = { baseUrl: $('baseUrl').value.trim(), format: $('format').value, timeoutMs: Number($('timeout').value) * 1000 };
+  if ($('apiKey').value.trim()) patch.apiKey = $('apiKey').value.trim();
+  await api('/api/config', patch);
+  await refresh();
+  $('status').innerHTML = '<span class="ok">设置已保存</span>';
+};
+$('usePath').onclick = async () => {
+  await api('/api/config', { refPath: $('refPath').value.trim() });
+  await refresh();
+};
+
+// ── 参考音频：选择 / 拖拽 ──
+$('pick').onclick = () => $('file').click();
+$('file').onchange = () => { if ($('file').files[0]) uploadRef($('file').files[0]); };
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => { const f = e.dataTransfer.files[0]; if (f) uploadRef(f); });
+
+function uploadRef(file) {
+  $('status').innerHTML = '<span class="timer">正在读取 ' + esc(file.name) + ' …</span>';
+  const fr = new FileReader();
+  fr.onload = async () => {
+    const r = await api('/api/ref', { name: file.name, dataUrl: fr.result });
+    if (!r.ok) { $('status').innerHTML = '<span class="err">' + esc(r.error) + '</span>'; return; }
+    $('status').innerHTML = '<span class="ok">参考音频已就绪：' + esc(r.file) + '</span>';
+    await refresh();
+  };
+  fr.onerror = () => { $('status').innerHTML = '<span class="err">读取文件失败</span>'; };
+  fr.readAsDataURL(file);
+}
+
+// ── 合成 ──
+$('text').oninput = () => { $('count').textContent = $('text').value.trim().length + ' 字'; };
+
+// ── 语气：预设一键填充 ──
+document.querySelectorAll('[data-style]').forEach((b) => b.onclick = () => { $('style').value = b.dataset.style; });
+$('clearStyle').onclick = () => { $('style').value = ''; };
+$('director').onclick = () => {
+  $('style').value = [
+    '角色：一只住在服务器里的小鲸鱼，性子活泼爱吐槽，说话像群里的熟人，不是客服。',
+    '场景：深夜的群里只剩几个人在聊天，有人刚讲了个冷笑话，你想接一句但又要装得不太在意。',
+    '指导：语速中等偏快、节奏跳跃，句尾轻轻上扬带笑；气息放松、靠前贴耳、不拖长腔；',
+    '情绪是"想笑又憋着"的得意，偶尔突然收小声音像怕被听见。'
+  ].join('\n');
+};
+
+// ── 音频标签：开头风格 / 句中插入 ──
+function insertAtCursor(el, text, atStart) {
+  const v = el.value;
+  if (atStart) {
+    // 已有开头的 (风格) 标签就覆盖掉，避免叠成 (A)(B)
+    el.value = text + v.replace(/^\s*[（(\[][^）)\]]{1,30}[）)\]]\s*/, '');
+  } else {
+    const s = el.selectionStart ?? v.length;
+    const e = el.selectionEnd ?? v.length;
+    el.value = v.slice(0, s) + text + v.slice(e);
+    el.selectionStart = el.selectionEnd = s + text.length;
+  }
+  el.focus();
+  el.dispatchEvent(new Event('input'));
+}
+document.querySelectorAll('.tag-open').forEach((b) => b.onclick = () => insertAtCursor($('text'), '(' + b.dataset.tag + ')', true));
+document.querySelectorAll('.tag-inline').forEach((b) => b.onclick = () => insertAtCursor($('text'), '[' + b.dataset.tag + ']', false));
+
+// ── 合成 ──
+$('go').onclick = async () => {
+  const text = $('text').value.trim();
+  const style = $('style').value.trim();
+  if (!text) { $('status').innerHTML = '<span class="err">先写点要念的文字</span>'; return; }
+  $('go').disabled = true;
+  $('result').innerHTML = '';
+  // 把真实请求展示出来（克隆样本太长，只显示占位）
+  $('payload').textContent = JSON.stringify({
+    model: 'mimo-v2.5-tts-voiceclone',
+    messages: [...(style ? [{ role: 'user', content: style }] : []), { role: 'assistant', content: text }],
+    audio: { format: $('format').value, voice: '<参考音频的 DataURL，' + fmtKB((state.ref && state.ref.bytes) || 0) + '>' }
+  }, null, 2);
+  const t0 = Date.now();
+  $('status').innerHTML = '<span class="timer">合成中… 0.0s</span>';
+  timerId = setInterval(() => { $('status').innerHTML = '<span class="timer">合成中… ' + ((Date.now() - t0) / 1000).toFixed(1) + 's</span>'; }, 100);
+  try {
+    const r = await api('/api/synthesize', { text, style });
+    clearInterval(timerId); timerId = null;
+    if (!r.ok) {
+      $('status').innerHTML = '<span class="err">合成失败</span>';
+      $('result').innerHTML = '<div class="err" style="margin-top:10px">' + esc(r.error) + '</div>';
+      return;
+    }
+    $('status').innerHTML = '<span class="ok">完成：' + (r.ms / 1000).toFixed(1) + ' 秒 · ' + r.chars + ' 字 · ' + fmtKB(r.bytes) + ' · 音色来自 ' + esc(r.refName) + (r.cached ? '（样本已缓存）' : '') + (r.styled ? ' · 带语气指令' : '') + '</span>';
+    $('result').innerHTML = '<audio controls autoplay src="/out/' + encodeURIComponent(r.file) + '?t=' + Date.now() + '"></audio>' +
+      '<div class="row tight" style="margin-top:8px"><a href="/out/' + encodeURIComponent(r.file) + '" download><button class="ghost">下载 ' + esc(r.file) + '</button></a></div>';
+    await refresh();
+  } catch (e) {
+    clearInterval(timerId); timerId = null;
+    $('status').innerHTML = '<span class="err">请求出错</span>';
+    $('result').innerHTML = '<div class="err">' + esc(e.message || e) + '</div>';
+  } finally {
+    $('go').disabled = false;
+  }
+};
+
+refresh().catch((e) => { document.body.insertAdjacentHTML('afterbegin', '<div class="err">连不上本地服务：' + esc(e.message) + '</div>'); });
+</script>
+</body>
+</html>
